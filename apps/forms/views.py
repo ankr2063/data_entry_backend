@@ -48,6 +48,25 @@ def extract_sharepoint_metadata(request):
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
+def get_forms_list(request):
+    """Get list of all forms"""
+    try:
+        forms = Form.objects.all().order_by('-created_at')
+        serializer = FormSerializer(forms, many=True)
+        return Response({
+            'forms': serializer.data,
+            'count': forms.count()
+        })
+        
+    except Exception as e:
+        return Response(
+            {'error': f'Failed to get forms list: {str(e)}'}, 
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
 def get_form_metadata(request, form_id):
     """Get form with display and entry versions"""
     try:
