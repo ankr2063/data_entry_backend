@@ -8,27 +8,43 @@ from .serializers import SharePointMetadataSerializer, FormSerializer
 from .services import SharePointService
 
 
+from rest_framework import status
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+from django.db import transaction
+from .models import Form, FormDisplayVersion, FormEntryVersion
+from .serializers import SharePointMetadataSerializer, FormSerializer
+from .services import SharePointService
+import json
+
+
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
-def extract_sharepoint_metadata(request):
-    """Process SharePoint URL with display and entry worksheets"""
+def create_form_from_sharepoint(request):
+    """Create new form from SharePoint URL"""
     try:
-        serializer = SharePointMetadataSerializer(data=request.data)
-        if not serializer.is_valid():
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        form_name = request.data.get('form_name')
+        sharepoint_url = request.data.get('sharepoint_url')
         
-        data = serializer.validated_data
+        if not form_name or not sharepoint_url:
+            return Response(
+                {'error': 'form_name and sharepoint_url are required'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
         sharepoint_service = SharePointService()
         
         # Process SharePoint URL with new flow
-        result = sharepoint_service.process_sharepoint_url(
-            data['sharepoint_url'],
+        result = sharepoint_service.create_new_form(
+            sharepoint_url,
+            form_name,
             created_by='system',  # Replace with actual user from request
             updated_by='system'   # Replace with actual user from request
         )
         
         return Response({
-            'message': 'SharePoint worksheets processed successfully',
+            'message': 'Form created successfully from SharePoint',
             'form_id': result['form_id'],
             'form_name': result['form_name'],
             'display_version': result['display_version'],
@@ -41,7 +57,55 @@ def extract_sharepoint_metadata(request):
         
     except Exception as e:
         return Response(
-            {'error': f'Failed to process SharePoint data: {str(e)}'}, 
+            {'error': f'Failed to create form: {str(e)}'}, 
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def update_form_from_sharepoint(request):
+    """Update existing form from SharePoint URL"""
+    try:
+        form_id = request.data.get('form_id')
+        sharepoint_url = request.data.get('sharepoint_url')
+        
+        if not form_id or not sharepoint_url:
+            return Response(
+                {'error': 'form_id and sharepoint_url are required'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        sharepoint_service = SharePointService()
+        
+        # Update existing form
+        result = sharepoint_service.update_existing_form(
+            form_id,
+            sharepoint_url,
+            updated_by='system'  # Replace with actual user from request
+        )
+        
+        return Response({
+            'message': 'Form updated successfully from SharePoint',
+            'form_id': result['form_id'],
+            'form_name': result['form_name'],
+            'display_version': result['display_version'],
+            'entry_version': result['entry_version'],
+            'versions_updated': result['versions_updated'],
+            'worksheets': {
+                'display': result['display_sheet'],
+                'entry': result['entry_sheet']
+            }
+        }, status=status.HTTP_200_OK)
+        
+    except Form.DoesNotExist:
+        return Response(
+            {'error': 'Form not found'}, 
+            status=status.HTTP_404_NOT_FOUND
+        )
+    except Exception as e:
+        return Response(
+            {'error': f'Failed to update form: {str(e)}'}, 
             status=status.HTTP_400_BAD_REQUEST
         )
 

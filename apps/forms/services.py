@@ -3,6 +3,7 @@ from msal import ConfidentialClientApplication
 from typing import Dict, List, Any
 from decouple import config
 from django.db import transaction
+from django.db import transaction
 from .models import Form, FormDisplayVersion, FormEntryVersion
 
 
@@ -26,8 +27,8 @@ class SharePointService:
                 raise Exception(f"Failed to acquire token: {result.get('error_description')}")
         return self.token
     
-    def process_sharepoint_url(self, sharepoint_url: str, created_by: str, updated_by: str) -> Dict:
-        """Process SharePoint URL with display and entry worksheets"""
+    def create_new_form(self, sharepoint_url: str, form_name: str, created_by: str, updated_by: str) -> Dict:
+        """Create new form from SharePoint URL"""
         worksheets = self.get_workbook_worksheets(sharepoint_url)
         
         display_sheet = None
@@ -43,35 +44,23 @@ class SharePointService:
         if not display_sheet or not entry_sheet:
             raise Exception("Both 'display' and 'entry' worksheets are required")
         
-        # Get form name from entry sheet (remove 'entry' keyword)
-        form_name = entry_sheet['name'].replace('entry', '').replace('Entry', '').strip()
-        
         with transaction.atomic():
             # Create form entry
-            form, created = Form.objects.get_or_create(
+            form = Form.objects.create(
                 form_name=form_name,
-                defaults={
-                    'source': 'sharepoint',
-                    'url': sharepoint_url,
-                    'created_by': created_by,
-                    'updated_by': updated_by
-                }
+                source='sharepoint',
+                url=sharepoint_url,
+                created_by=created_by,
+                updated_by=updated_by
             )
-            
-            if not created:
-                form.updated_by = updated_by
-                form.save()
             
             # Process display sheet - get complete metadata till column 12
             display_metadata = self.get_display_sheet_metadata(sharepoint_url, display_sheet['name'])
             
-            # Get next version for display
-            display_version = self._get_next_version(form, 'display')
-            
             FormDisplayVersion.objects.create(
                 form=form,
                 form_display_json=display_metadata,
-                form_version=str(display_version),
+                form_version='1',
                 approved=False,
                 created_by=created_by,
                 updated_by=updated_by
@@ -80,13 +69,10 @@ class SharePointService:
             # Process entry sheet - transform to JSON object list
             entry_data = self.get_entry_sheet_data(sharepoint_url, entry_sheet['name'])
             
-            # Get next version for entry
-            entry_version = self._get_next_version(form, 'entry')
-            
             FormEntryVersion.objects.create(
                 form=form,
                 form_entry_json=entry_data,
-                form_version=str(entry_version),
+                form_version='1',
                 approved=False,
                 created_by=created_by,
                 updated_by=updated_by
@@ -95,8 +81,81 @@ class SharePointService:
             return {
                 'form_id': form.id,
                 'form_name': form_name,
+                'display_version': 1,
+                'entry_version': 1,
+                'display_sheet': display_sheet['name'],
+                'entry_sheet': entry_sheet['name']
+            }
+    
+    def update_existing_form(self, form_id: int, sharepoint_url: str, updated_by: str) -> Dict:
+        """Update existing form from SharePoint URL"""
+        form = Form.objects.get(id=form_id)
+        
+        worksheets = self.get_workbook_worksheets(sharepoint_url)
+        
+        display_sheet = None
+        entry_sheet = None
+        
+        for worksheet in worksheets:
+            name = worksheet['name'].lower()
+            if 'display' in name:
+                display_sheet = worksheet
+            elif 'entry' in name:
+                entry_sheet = worksheet
+        
+        if not display_sheet or not entry_sheet:
+            raise Exception("Both 'display' and 'entry' worksheets are required")
+        
+        # Get new data
+        new_display_metadata = self.get_display_sheet_metadata(sharepoint_url, display_sheet['name'])
+        new_entry_data = self.get_entry_sheet_data(sharepoint_url, entry_sheet['name'])
+        
+        # Get latest versions
+        latest_display = FormDisplayVersion.objects.filter(form=form).order_by('-form_version').first()
+        latest_entry = FormEntryVersion.objects.filter(form=form).order_by('-form_version').first()
+        
+        versions_updated = []
+        display_version = int(latest_display.form_version) if latest_display else 0
+        entry_version = int(latest_entry.form_version) if latest_entry else 0
+        
+        with transaction.atomic():
+            # Update form URL
+            form.url = sharepoint_url
+            form.updated_by = updated_by
+            form.save()
+            
+            # Check if display data changed
+            if not latest_display or latest_display.form_display_json != new_display_metadata:
+                display_version += 1
+                FormDisplayVersion.objects.create(
+                    form=form,
+                    form_display_json=new_display_metadata,
+                    form_version=str(display_version),
+                    approved=False,
+                    created_by=updated_by,
+                    updated_by=updated_by
+                )
+                versions_updated.append('display')
+            
+            # Check if entry data changed
+            if not latest_entry or latest_entry.form_entry_json != new_entry_data:
+                entry_version += 1
+                FormEntryVersion.objects.create(
+                    form=form,
+                    form_entry_json=new_entry_data,
+                    form_version=str(entry_version),
+                    approved=False,
+                    created_by=updated_by,
+                    updated_by=updated_by
+                )
+                versions_updated.append('entry')
+            
+            return {
+                'form_id': form.id,
+                'form_name': form.form_name,
                 'display_version': display_version,
                 'entry_version': entry_version,
+                'versions_updated': versions_updated,
                 'display_sheet': display_sheet['name'],
                 'entry_sheet': entry_sheet['name']
             }
@@ -167,20 +226,7 @@ class SharePointService:
             json_objects.append(row_obj)
         
         return json_objects
-    
-    def _get_next_version(self, form: Form, version_type: str) -> int:
-        """Get next version number for form"""
-        if version_type == 'display':
-            last_version = FormDisplayVersion.objects.filter(form=form).order_by('-form_version').first()
-        else:
-            last_version = FormEntryVersion.objects.filter(form=form).order_by('-form_version').first()
-        
-        if last_version:
-            try:
-                return int(last_version.form_version) + 1
-            except ValueError:
-                return 1
-        return 1
+
     
     def get_workbook_worksheets(self, sharepoint_url: str) -> List[Dict]:
         token = self.get_access_token()

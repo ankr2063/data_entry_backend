@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Form, WorksheetMetadata, CellMetadata, UserFormAccess
+from .models import Form, UserFormAccess, FormDisplayVersion, FormEntryVersion, FormData, FormDataHistory
 
 
 @admin.register(Form)
@@ -9,18 +9,17 @@ class FormAdmin(admin.ModelAdmin):
     readonly_fields = ['created_at', 'updated_at']
 
 
-@admin.register(WorksheetMetadata)
-class WorksheetMetadataAdmin(admin.ModelAdmin):
-    list_display = ['id', 'form', 'worksheet_name', 'row_count', 'column_count', 'created_at']
-    list_filter = ['form']
+@admin.register(FormDisplayVersion)
+class FormDisplayVersionAdmin(admin.ModelAdmin):
+    list_display = ['id', 'form', 'form_version', 'approved', 'created_at']
+    list_filter = ['approved', 'form']
     readonly_fields = ['created_at', 'updated_at']
 
 
-@admin.register(CellMetadata)
-class CellMetadataAdmin(admin.ModelAdmin):
-    list_display = ['id', 'worksheet', 'cell_address', 'data_type', 'value']
-    list_filter = ['data_type', 'worksheet']
-    search_fields = ['cell_address', 'value']
+@admin.register(FormEntryVersion)
+class FormEntryVersionAdmin(admin.ModelAdmin):
+    list_display = ['id', 'form', 'form_version', 'approved', 'created_at']
+    list_filter = ['approved', 'form']
     readonly_fields = ['created_at', 'updated_at']
 
 
@@ -28,3 +27,18 @@ class CellMetadataAdmin(admin.ModelAdmin):
 class UserFormAccessAdmin(admin.ModelAdmin):
     list_display = ['id', 'user', 'form', 'role', 'created_at']
     list_filter = ['role']
+    readonly_fields = ['created_at', 'updated_at']
+
+
+@admin.register(FormData)
+class FormDataAdmin(admin.ModelAdmin):
+    list_display = ['id', 'form', 'created_by', 'created_at']
+    list_filter = ['form']
+    readonly_fields = ['created_at', 'updated_at']
+
+
+@admin.register(FormDataHistory)
+class FormDataHistoryAdmin(admin.ModelAdmin):
+    list_display = ['id', 'form', 'updated_by', 'updated_at']
+    list_filter = ['form']
+    readonly_fields = ['created_at', 'updated_at']
