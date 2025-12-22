@@ -8,6 +8,8 @@ from .models import Form, FormDisplayVersion, FormEntryVersion
 from openpyxl import load_workbook
 from openpyxl.cell.cell import MergedCell
 from io import BytesIO
+import zipfile
+import xml.etree.ElementTree as ET
 
 
 class SharePointService:
@@ -87,7 +89,7 @@ class SharePointService:
                 'entry_sheet': entry_sheet['name']
             }
     
-    def update_existing_form(self, form_id: int, sharepoint_url: str, updated_by: str) -> Dict:
+    def update_existing_form(self, form_id: int, updated_by: str) -> Dict:
         """Update existing form from SharePoint URL"""
         form = Form.objects.get(id=form_id)
         sharepoint_url = form.url
@@ -435,30 +437,47 @@ class SharePointService:
             if response.status_code != 200:
                 raise Exception(f"Failed to download file: {response.status_code}")
             
-            wb = load_workbook(BytesIO(response.content), data_only=False)
+            file_content = BytesIO(response.content)
+            
+            # Extract theme colors from Excel file
+            theme_colors = self._extract_theme_colors(file_content)
+            file_content.seek(0)  # Reset file pointer
+            
+            wb = load_workbook(file_content, data_only=False)
             ws = wb[worksheet_name]
             
             # Load workbook again with data_only=True to get calculated values
-            wb_data = load_workbook(BytesIO(response.content), data_only=True)
+            file_content.seek(0)
+            wb_data = load_workbook(file_content, data_only=True)
             ws_data = wb_data[worksheet_name]
             
             # Determine dimensions (max 12 columns)
             max_row = ws.max_row
             max_col = min(ws.max_column, 12)
             
-            # Extract cells metadata
-            cells_metadata = []
+            # Find actual used columns (non-empty cells)
+            used_cols = set()
             for row_idx in range(1, max_row + 1):
                 for col_idx in range(1, max_col + 1):
                     cell = ws.cell(row_idx, col_idx)
+                    if cell.value is not None and str(cell.value).strip():
+                        used_cols.add(col_idx)
+            
+            actual_max_col = max(used_cols) if used_cols else max_col
+            
+            # Extract cells metadata
+            cells_metadata = []
+            for row_idx in range(1, max_row + 1):
+                for col_idx in range(1, actual_max_col + 1):
+                    cell = ws.cell(row_idx, col_idx)
                     cell_data_value = ws_data.cell(row_idx, col_idx)
-                    cell_data = self._extract_openpyxl_cell_data(cell, cell_data_value, row_idx - 1, col_idx - 1, ws)
+                    cell_data = self._extract_openpyxl_cell_data(cell, cell_data_value, row_idx - 1, col_idx - 1, ws, theme_colors)
                     cells_metadata.append(cell_data)
             
             # Extract merged cells
             merged_cells = []
             for merged_range in ws.merged_cells.ranges:
-                if merged_range.min_col <= max_col:
+                if merged_range.min_col <= actual_max_col:
                     merged_cells.append({
                         "range": str(merged_range),
                         "start_row": merged_range.min_row - 1,
@@ -469,7 +488,7 @@ class SharePointService:
             
             return {
                 "worksheet_name": worksheet_name,
-                "dimensions": {"rows": max_row, "columns": max_col},
+                "dimensions": {"rows": max_row, "columns": actual_max_col},
                 "cells": cells_metadata,
                 "merged_cells": merged_cells
             }
@@ -477,7 +496,7 @@ class SharePointService:
         except Exception as e:
             raise Exception(f"Failed to extract display metadata: {e}")
     
-    def _extract_openpyxl_cell_data(self, cell, cell_data_value, row: int, col: int, ws) -> Dict:
+    def _extract_openpyxl_cell_data(self, cell, cell_data_value, row: int, col: int, ws, theme_colors: Dict) -> Dict:
         """Extract all metadata from an openpyxl cell"""
         # Handle merged cells - they don't have full attributes
         if isinstance(cell, MergedCell):
@@ -525,10 +544,10 @@ class SharePointService:
                 "italic": cell.font.italic if cell.font else False,
                 "underline": cell.font.underline if cell.font else "none",
                 "strikethrough": cell.font.strike if cell.font else False,
-                "color": self._get_color_value(cell.font.color) if cell.font and cell.font.color else ""
+                "color": self._get_color_value(cell.font.color, theme_colors) if cell.font and cell.font.color else ""
             },
             "fill": {
-                "color": self._get_color_value(cell.fill.fgColor) if cell.fill and cell.fill.patternType and cell.fill.patternType != 'none' else "",
+                "color": self._get_color_value(cell.fill.fgColor, theme_colors) if cell.fill and cell.fill.fgColor and cell.fill.patternType and cell.fill.patternType != 'none' else "",
                 "pattern_type": cell.fill.patternType if cell.fill else ""
             },
             "alignment": {
@@ -562,20 +581,86 @@ class SharePointService:
     
 
     
-    def _get_color_value(self, color_obj) -> str:
+    def _extract_theme_colors(self, file_content: BytesIO) -> Dict:
+        """Extract theme colors from Excel file"""
+        theme_colors = {}
+        try:
+            with zipfile.ZipFile(file_content, 'r') as zip_ref:
+                theme_xml = zip_ref.read('xl/theme/theme1.xml')
+                root = ET.fromstring(theme_xml)
+                
+                # Define namespace
+                ns = {'a': 'http://schemas.openxmlformats.org/drawingml/2006/main'}
+                
+                # Extract color scheme
+                clr_scheme = root.find('.//a:clrScheme', ns)
+                if clr_scheme:
+                    color_map = {
+                        'lt1': 0, 'dk1': 1, 'lt2': 2, 'dk2': 3,
+                        'accent1': 4, 'accent2': 5, 'accent3': 6,
+                        'accent4': 7, 'accent5': 8, 'accent6': 9
+                    }
+                    
+                    for color_name, theme_idx in color_map.items():
+                        color_elem = clr_scheme.find(f'.//a:{color_name}', ns)
+                        if color_elem:
+                            # Check for srgbClr or sysClr
+                            srgb = color_elem.find('.//a:srgbClr', ns)
+                            if srgb is not None and 'val' in srgb.attrib:
+                                theme_colors[theme_idx] = srgb.attrib['val']
+                            else:
+                                sys_clr = color_elem.find('.//a:sysClr', ns)
+                                if sys_clr is not None and 'lastClr' in sys_clr.attrib:
+                                    theme_colors[theme_idx] = sys_clr.attrib['lastClr']
+        except:
+            pass
+        
+        return theme_colors
+
+    def _get_color_value(self, color_obj, theme_colors: Dict) -> str:
         """Extract color value from openpyxl color object"""
         if not color_obj:
             return ""
         
-        # Try to get RGB value
-        if hasattr(color_obj, 'rgb') and color_obj.rgb:
-            rgb = str(color_obj.rgb)
-            # Filter out default/empty colors (00000000, 000000, etc.)
-            if rgb and rgb not in ['00000000', '000000']:
-                # Remove alpha channel if present (first 2 chars)
-                return rgb[-6:] if len(rgb) == 8 else rgb
+        try:
+            # Check RGB first
+            if hasattr(color_obj, 'rgb') and color_obj.rgb and isinstance(color_obj.rgb, str):
+                rgb = color_obj.rgb
+                if rgb not in ['00000000', 'FF000000']:
+                    return rgb[2:] if len(rgb) == 8 else rgb
+            
+            # Handle theme colors
+            if hasattr(color_obj, 'theme') and color_obj.theme is not None:
+                base_color = theme_colors.get(color_obj.theme, '')
+                if base_color:
+                    # Apply tint if present
+                    if hasattr(color_obj, 'tint') and color_obj.tint != 0:
+                        return self._apply_tint(base_color, color_obj.tint)
+                    return base_color
+        except:
+            pass
         
         return ""
+    
+    def _apply_tint(self, rgb: str, tint: float) -> str:
+        """Apply tint to RGB color"""
+        try:
+            r, g, b = int(rgb[0:2], 16), int(rgb[2:4], 16), int(rgb[4:6], 16)
+            
+            if tint < 0:
+                # Darken
+                r = int(r * (1 + tint))
+                g = int(g * (1 + tint))
+                b = int(b * (1 + tint))
+            else:
+                # Lighten
+                r = int(r + (255 - r) * tint)
+                g = int(g + (255 - g) * tint)
+                b = int(b + (255 - b) * tint)
+            
+            return f"{r:02X}{g:02X}{b:02X}"
+        except:
+            return rgb
     
     def _infer_data_type(self, value) -> str:
         if value is None or value == "":
