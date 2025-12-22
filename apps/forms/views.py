@@ -1,6 +1,6 @@
 from rest_framework import status
-from rest_framework.decorators import api_view, permission_classes, authentication_classes
-from rest_framework.permissions import IsAuthenticated, AllowAny
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from django.db import transaction
 from .models import Form, FormDisplayVersion, FormEntryVersion
@@ -10,8 +10,7 @@ import json
 
 
 @api_view(['POST'])
-@authentication_classes([])
-@permission_classes([])
+#@permission_classes([IsAuthenticated])
 def create_form_from_sharepoint(request):
     """Create new form from SharePoint URL"""
     try:
@@ -54,8 +53,7 @@ def create_form_from_sharepoint(request):
 
 
 @api_view(['POST'])
-@authentication_classes([])
-@permission_classes([])
+#@permission_classes([IsAuthenticated])
 def update_form_from_sharepoint(request):
     """Update existing form from SharePoint URL"""
     try:
@@ -103,8 +101,7 @@ def update_form_from_sharepoint(request):
 
 
 @api_view(['GET'])
-@authentication_classes([])
-@permission_classes([])
+#@permission_classes([IsAuthenticated])
 def get_forms_list(request):
     """Get list of all forms"""
     try:
@@ -123,25 +120,38 @@ def get_forms_list(request):
 
 
 @api_view(['GET'])
-@authentication_classes([])
-@permission_classes([])
-def get_form_metadata(request, form_id):
-    """Get form entry data only"""
+#@permission_classes([IsAuthenticated])
+def get_form_metadata(request, form_id, metadata_type):
+    """Get form metadata based on type: 'entry', 'display', or 'both'"""
     try:
+        if metadata_type not in ['entry', 'display', 'both']:
+            return Response(
+                {'error': 'metadata_type must be one of: entry, display, both'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
         form = Form.objects.get(id=form_id)
+        response_data = {'form': FormSerializer(form).data}
         
-        # Get latest entry version only
-        entry_version = FormEntryVersion.objects.filter(form=form).order_by('-form_version').first()
-        
-        return Response({
-            'form': FormSerializer(form).data,
-            'entry_data': entry_version.form_entry_json if entry_version else [],
-            'entry_version': {
+        if metadata_type in ['entry', 'both']:
+            entry_version = FormEntryVersion.objects.filter(form=form).first()
+            response_data['entry_data'] = entry_version.form_entry_json if entry_version else []
+            response_data['entry_version'] = {
                 'id': entry_version.id if entry_version else None,
                 'version': entry_version.form_version if entry_version else None,
                 'approved': entry_version.approved if entry_version else None
             }
-        })
+        
+        if metadata_type in ['display', 'both']:
+            display_version = FormDisplayVersion.objects.filter(form=form).first()
+            response_data['display_data'] = display_version.form_display_json if display_version else {}
+            response_data['display_version'] = {
+                'id': display_version.id if display_version else None,
+                'version': display_version.form_version if display_version else None,
+                'approved': display_version.approved if display_version else None
+            }
+        
+        return Response(response_data)
         
     except Form.DoesNotExist:
         return Response(
