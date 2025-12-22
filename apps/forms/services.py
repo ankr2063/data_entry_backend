@@ -90,6 +90,7 @@ class SharePointService:
     def update_existing_form(self, form_id: int, sharepoint_url: str, updated_by: str) -> Dict:
         """Update existing form from SharePoint URL"""
         form = Form.objects.get(id=form_id)
+        sharepoint_url = form.url
         worksheets = self.get_workbook_worksheets(sharepoint_url)
         
         display_sheet = None

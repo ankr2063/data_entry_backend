@@ -68,7 +68,6 @@ class FormData(models.Model):
     updated_by = models.CharField(max_length=255, null=True, blank=True)
     form = models.ForeignKey(Form, on_delete=models.CASCADE, db_column='form_id')
     form_entry_version = models.ForeignKey(FormEntryVersion, on_delete=models.CASCADE, db_column='form_entry_vid')
-    form_display_version = models.ForeignKey(FormDisplayVersion, on_delete=models.CASCADE, db_column='form_display_vid')
     form_values_json = models.JSONField()
 
     class Meta:
@@ -79,8 +78,8 @@ class FormDataHistory(models.Model):
     id = models.AutoField(primary_key=True)
     form = models.ForeignKey(Form, on_delete=models.CASCADE, db_column='form_id')
     form_entry_version = models.ForeignKey(FormEntryVersion, on_delete=models.CASCADE, db_column='form_entry_vid')
-    form_display_version = models.ForeignKey(FormDisplayVersion, on_delete=models.CASCADE, db_column='form_display_vid')
     form_values_json = models.JSONField()
+    version = models.IntegerField()
     updated_by = models.CharField(max_length=255)
     updated_at = models.DateTimeField(auto_now=True)
     created_by = models.CharField(max_length=255)
