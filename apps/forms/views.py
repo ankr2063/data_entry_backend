@@ -1,16 +1,6 @@
 from rest_framework import status
-from rest_framework.decorators import api_view, permission_classes
-from rest_framework.permissions import IsAuthenticated
-from rest_framework.response import Response
-from django.db import transaction
-from .models import Form, FormDisplayVersion, FormEntryVersion
-from .serializers import SharePointMetadataSerializer, FormSerializer
-from .services import SharePointService
-
-
-from rest_framework import status
-from rest_framework.decorators import api_view, permission_classes
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.decorators import api_view, permission_classes, authentication_classes
+from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.response import Response
 from django.db import transaction
 from .models import Form, FormDisplayVersion, FormEntryVersion
@@ -20,7 +10,8 @@ import json
 
 
 @api_view(['POST'])
-@permission_classes([IsAuthenticated])
+@authentication_classes([])
+@permission_classes([])
 def create_form_from_sharepoint(request):
     """Create new form from SharePoint URL"""
     try:
@@ -63,7 +54,8 @@ def create_form_from_sharepoint(request):
 
 
 @api_view(['POST'])
-@permission_classes([IsAuthenticated])
+@authentication_classes([])
+@permission_classes([])
 def update_form_from_sharepoint(request):
     """Update existing form from SharePoint URL"""
     try:
@@ -111,7 +103,8 @@ def update_form_from_sharepoint(request):
 
 
 @api_view(['GET'])
-@permission_classes([IsAuthenticated])
+@authentication_classes([])
+@permission_classes([])
 def get_forms_list(request):
     """Get list of all forms"""
     try:
@@ -130,29 +123,23 @@ def get_forms_list(request):
 
 
 @api_view(['GET'])
-@permission_classes([IsAuthenticated])
+@authentication_classes([])
+@permission_classes([])
 def get_form_metadata(request, form_id):
-    """Get form with display and entry versions"""
+    """Get form entry data only"""
     try:
         form = Form.objects.get(id=form_id)
         
-        # Get latest versions
-        display_version = FormDisplayVersion.objects.filter(form=form).order_by('-form_version').first()
+        # Get latest entry version only
         entry_version = FormEntryVersion.objects.filter(form=form).order_by('-form_version').first()
         
         return Response({
             'form': FormSerializer(form).data,
-            'display_version': {
-                'id': display_version.id if display_version else None,
-                'version': display_version.form_version if display_version else None,
-                'approved': display_version.approved if display_version else None,
-                'data': display_version.form_display_json if display_version else None
-            },
+            'entry_data': entry_version.form_entry_json if entry_version else [],
             'entry_version': {
                 'id': entry_version.id if entry_version else None,
                 'version': entry_version.form_version if entry_version else None,
-                'approved': entry_version.approved if entry_version else None,
-                'data': entry_version.form_entry_json if entry_version else None
+                'approved': entry_version.approved if entry_version else None
             }
         })
         

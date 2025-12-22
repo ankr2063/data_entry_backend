@@ -1,3 +1,5 @@
+from ctypes import sizeof
+from tkinter import W
 import requests
 from msal import ConfidentialClientApplication
 from typing import Dict, List, Any
@@ -30,6 +32,10 @@ class SharePointService:
     def create_new_form(self, sharepoint_url: str, form_name: str, created_by: str, updated_by: str) -> Dict:
         """Create new form from SharePoint URL"""
         worksheets = self.get_workbook_worksheets(sharepoint_url)
+
+        print('worksheets', len(worksheets));
+        for worksheet in worksheets:
+            print('worksheet', worksheet['name']);
         
         display_sheet = None
         entry_sheet = None
@@ -41,6 +47,8 @@ class SharePointService:
             elif 'entry' in name:
                 entry_sheet = worksheet
         
+        print('display_sheet', display_sheet);
+        print('entry_sheet', entry_sheet);
         if not display_sheet or not entry_sheet:
             raise Exception("Both 'display' and 'entry' worksheets are required")
         
@@ -56,6 +64,8 @@ class SharePointService:
             
             # Process display sheet - get complete metadata till column 12
             display_metadata = self.get_display_sheet_metadata(sharepoint_url, display_sheet['name'])
+
+            print('display_metadata', display_metadata);
             
             FormDisplayVersion.objects.create(
                 form=form,
@@ -68,6 +78,8 @@ class SharePointService:
             
             # Process entry sheet - transform to JSON object list
             entry_data = self.get_entry_sheet_data(sharepoint_url, entry_sheet['name'])
+
+            print('entry_data', entry_data);
             
             FormEntryVersion.objects.create(
                 form=form,
@@ -185,10 +197,14 @@ class SharePointService:
                 cell_data["column"] = col
                 cells_metadata.append(cell_data)
         
+        # Get merged cells information
+        merged_cells = self._get_merged_cells(base_url, headers)
+        
         return {
             "worksheet_name": worksheet_name,
             "dimensions": {"rows": row_count, "columns": 12},
-            "cells": cells_metadata
+            "cells": cells_metadata,
+            "merged_cells": merged_cells
         }
     
     def get_entry_sheet_data(self, sharepoint_url: str, worksheet_name: str) -> List[Dict]:
@@ -279,20 +295,247 @@ class SharePointService:
                 return {"address": cell_address, "value": "", "error": response.text}
             
             cell_data = response.json()
+            
+            # Get basic cell data
             values = cell_data.get("values", [[""]])
             value = values[0][0] if values and len(values) > 0 and len(values[0]) > 0 else ""
             
             formulas = cell_data.get("formulas", [[""]])
             formula = formulas[0][0] if formulas and len(formulas) > 0 and len(formulas[0]) > 0 else ""
             
+            text = cell_data.get("text", [[""]])
+            display_value = text[0][0] if text and len(text) > 0 and len(text[0]) > 0 else ""
+            
+            # Get comprehensive formatting data
+            format_data = self._get_cell_format_data(cell_url, headers)
+            
+            # Get additional cell properties
+            additional_data = self._get_additional_cell_data(cell_url, headers)
+            
             return {
                 "address": cell_address,
                 "value": value,
                 "formula": formula,
-                "data_type": self._infer_data_type(value)
+                "display_value": display_value,
+                "data_type": self._infer_data_type(value),
+                "font": format_data.get("font", {}),
+                "fill": format_data.get("fill", {}),
+                "alignment": format_data.get("alignment", {}),
+                "borders": format_data.get("borders", {}),
+                "number_format": format_data.get("number_format", {}),
+                "protection": format_data.get("protection", {}),
+                "column_width": format_data.get("column_width", 0),
+                "row_height": format_data.get("row_height", 0),
+                "column_hidden": format_data.get("column_hidden", False),
+                "row_hidden": format_data.get("row_hidden", False),
+                "hyperlink": additional_data.get("hyperlink", {}),
+                "comment": additional_data.get("comment", {}),
+                "validation": additional_data.get("validation", {}),
+                "conditional_formats": additional_data.get("conditional_formats", [])
             }
         except Exception as e:
             return {"address": cell_address, "value": "", "error": str(e)}
+    
+    def _get_cell_format_data(self, cell_url: str, headers: Dict) -> Dict:
+        try:
+            format_url = f"{cell_url}/format"
+            format_response = requests.get(format_url, headers=headers)
+            if format_response.status_code != 200:
+                return {}
+            
+            format_data = format_response.json()
+            
+            # Get font data
+            font_data = {}
+            try:
+                font_response = requests.get(f"{format_url}/font", headers=headers)
+                if font_response.status_code == 200:
+                    font_data = font_response.json()
+            except:
+                pass
+            
+            # Get fill data
+            fill_data = {}
+            try:
+                fill_response = requests.get(f"{format_url}/fill", headers=headers)
+                if fill_response.status_code == 200:
+                    fill_data = fill_response.json()
+            except:
+                pass
+            
+            # Get borders data
+            borders_data = {}
+            try:
+                borders_response = requests.get(f"{format_url}/borders", headers=headers)
+                if borders_response.status_code == 200:
+                    borders_data = borders_response.json()
+            except:
+                pass
+            
+            # Get protection data
+            protection_data = {}
+            try:
+                protection_response = requests.get(f"{format_url}/protection", headers=headers)
+                if protection_response.status_code == 200:
+                    protection_data = protection_response.json()
+            except:
+                pass
+            
+            return {
+                "number_format": {
+                    "format": format_data.get("numberFormat", {}).get("format", ""),
+                    "format_local": format_data.get("numberFormat", {}).get("formatLocal", ""),
+                    "category": format_data.get("numberFormat", {}).get("category", "")
+                },
+                "font": {
+                    "name": font_data.get("name", ""),
+                    "size": font_data.get("size", 0),
+                    "bold": font_data.get("bold", False),
+                    "italic": font_data.get("italic", False),
+                    "underline": font_data.get("underline", ""),
+                    "strikethrough": font_data.get("strikethrough", False),
+                    "subscript": font_data.get("subscript", False),
+                    "superscript": font_data.get("superscript", False),
+                    "color": self._extract_color_value(font_data.get("color", "")),
+                    "tint_and_shade": font_data.get("tintAndShade", 0)
+                },
+                "fill": {
+                    "color": self._extract_color_value(fill_data.get("color", "")),
+                    "pattern_color": self._extract_color_value(fill_data.get("patternColor", "")),
+                    "pattern_type": fill_data.get("patternType", ""),
+                    "tint_and_shade": fill_data.get("tintAndShade", 0),
+                    "gradient": self._extract_gradient_info(fill_data.get("gradient", {}))
+                },
+                "alignment": {
+                    "horizontal": format_data.get("horizontalAlignment", ""),
+                    "vertical": format_data.get("verticalAlignment", ""),
+                    "wrap_text": format_data.get("wrapText", False),
+                    "indent": format_data.get("indentLevel", 0),
+                    "text_rotation": format_data.get("textRotation", 0),
+                    "justify_distributed": format_data.get("justifyDistributed", False),
+                    "reading_order": format_data.get("readingOrder", ""),
+                    "shrink_to_fit": format_data.get("shrinkToFit", False)
+                },
+                "borders": self._extract_border_info(borders_data),
+                "protection": {
+                    "locked": protection_data.get("locked", False),
+                    "formula_hidden": protection_data.get("formulaHidden", False)
+                },
+                "column_width": format_data.get("columnWidth", 0),
+                "row_height": format_data.get("rowHeight", 0),
+                "column_hidden": format_data.get("columnHidden", False),
+                "row_hidden": format_data.get("rowHidden", False)
+            }
+        except Exception as e:
+            return {}
+    
+    def _extract_color_value(self, color_data) -> str:
+        if isinstance(color_data, str):
+            return color_data
+        elif isinstance(color_data, dict):
+            return color_data.get("index", "")
+        return ""
+    
+    def _extract_border_info(self, borders_data: Dict) -> Dict:
+        if not borders_data or "value" not in borders_data:
+            return {}
+        
+        borders = {}
+        for border in borders_data.get("value", []):
+            side = border.get("sideIndex", "")
+            borders[side] = {
+                "style": border.get("style", ""),
+                "color": self._extract_color_value(border.get("color", "")),
+                "weight": border.get("weight", ""),
+                "tint_and_shade": border.get("tintAndShade", 0),
+                "line_style": border.get("lineStyle", "")
+            }
+        return borders
+    
+    def _extract_gradient_info(self, gradient_data: Dict) -> Dict:
+        if not gradient_data:
+            return {}
+        
+        return {
+            "type": gradient_data.get("type", ""),
+            "angle": gradient_data.get("angle", 0),
+            "direction": gradient_data.get("direction", ""),
+            "stops": gradient_data.get("stops", [])
+        }
+    
+    def _get_additional_cell_data(self, cell_url: str, headers: Dict) -> Dict:
+        additional_data = {
+            "hyperlink": {},
+            "comment": {},
+            "validation": {},
+            "conditional_formats": []
+        }
+        
+        # Get hyperlink data
+        try:
+            hyperlink_response = requests.get(f"{cell_url}/hyperlink", headers=headers)
+            if hyperlink_response.status_code == 200:
+                hyperlink_data = hyperlink_response.json()
+                additional_data["hyperlink"] = {
+                    "address": hyperlink_data.get("address", ""),
+                    "document_reference": hyperlink_data.get("documentReference", ""),
+                    "screen_tip": hyperlink_data.get("screenTip", ""),
+                    "text_to_display": hyperlink_data.get("textToDisplay", "")
+                }
+        except:
+            pass
+        
+        # Get comment data
+        try:
+            comment_response = requests.get(f"{cell_url}/comment", headers=headers)
+            if comment_response.status_code == 200:
+                comment_data = comment_response.json()
+                additional_data["comment"] = {
+                    "content": comment_data.get("content", ""),
+                    "author": comment_data.get("author", {}).get("name", ""),
+                    "creation_date": comment_data.get("creationDate", ""),
+                    "replies": comment_data.get("replies", [])
+                }
+        except:
+            pass
+        
+        # Get data validation
+        try:
+            validation_response = requests.get(f"{cell_url}/dataValidation", headers=headers)
+            if validation_response.status_code == 200:
+                validation_data = validation_response.json()
+                additional_data["validation"] = {
+                    "type": validation_data.get("type", ""),
+                    "operator": validation_data.get("operator", ""),
+                    "formula1": validation_data.get("formula1", ""),
+                    "formula2": validation_data.get("formula2", ""),
+                    "ignore_blanks": validation_data.get("ignoreBlanks", False),
+                    "show_input_message": validation_data.get("showInputMessage", False),
+                    "show_error_alert": validation_data.get("showErrorAlert", False),
+                    "input_title": validation_data.get("inputTitle", ""),
+                    "input_message": validation_data.get("inputMessage", ""),
+                    "error_title": validation_data.get("errorTitle", ""),
+                    "error_message": validation_data.get("errorMessage", "")
+                }
+        except:
+            pass
+        
+        return additional_data
+    
+    def _get_merged_cells(self, base_url: str, headers: Dict) -> List[Dict]:
+        try:
+            merged_url = f"{base_url}/mergedCells"
+            response = requests.get(merged_url, headers=headers)
+            
+            if response.status_code == 200:
+                merged_data = response.json().get("value", [])
+                return [{
+                    "address": cell.get("address", ""),
+                    "range": cell.get("address", "").split("!")[-1] if "!" in cell.get("address", "") else cell.get("address", "")
+                } for cell in merged_data]
+            return []
+        except Exception as e:
+            return []
     
     def _infer_data_type(self, value) -> str:
         if value is None or value == "":
