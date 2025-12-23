@@ -228,3 +228,53 @@ def save_form_data(request):
             {'error': f'Failed to save form data: {str(e)}'}, 
             status=status.HTTP_400_BAD_REQUEST
         )
+
+
+@api_view(['GET'])
+#@permission_classes([IsAuthenticated])
+def get_form_entries(request, form_id):
+    """Get all form data entries for a specific form"""
+    try:
+        form = Form.objects.get(id=form_id)
+        form_entries = FormData.objects.filter(form=form).order_by('-created_at')
+        
+        # Get latest entry version to extract column names
+        latest_entry_version = FormEntryVersion.objects.filter(form=form).order_by('-form_version').first()
+        
+        # Create columns dictionary from entry JSON (id -> name mapping)
+        columns = {}
+        if latest_entry_version and latest_entry_version.form_entry_json:
+            for item in latest_entry_version.form_entry_json:
+                if 'id' in item and 'name' in item:
+                    columns[str(item['id'])] = item['name']
+        
+        # Format entries data
+        entries_data = []
+        for entry in form_entries:
+            entries_data.append({
+                'id': entry.id,
+                'values': entry.form_values_json,
+                'created_by': entry.created_by,
+                'created_at': entry.created_at,
+                'updated_by': entry.updated_by,
+                'updated_at': entry.updated_at
+            })
+        
+        return Response({
+            'form_id': form.id,
+            'form_name': form.form_name,
+            'columns': columns,
+            'entries': entries_data,
+            'count': len(entries_data)
+        })
+        
+    except Form.DoesNotExist:
+        return Response(
+            {'error': 'Form not found'}, 
+            status=status.HTTP_404_NOT_FOUND
+        )
+    except Exception as e:
+        return Response(
+            {'error': f'Failed to get form entries: {str(e)}'}, 
+            status=status.HTTP_400_BAD_REQUEST
+        )
