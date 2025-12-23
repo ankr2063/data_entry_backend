@@ -92,6 +92,7 @@ def update_form_from_sharepoint(request):
             status=status.HTTP_404_NOT_FOUND
         )
     except Exception as e:
+        print(e)
         return Response(
             {'error': f'Failed to update form: {str(e)}'}, 
             status=status.HTTP_400_BAD_REQUEST
@@ -157,6 +158,7 @@ def get_form_metadata(request, form_id, metadata_type):
             status=status.HTTP_404_NOT_FOUND
         )
     except Exception as e:
+        print(e)
         return Response(
             {'error': f'Failed to get form data: {str(e)}'}, 
             status=status.HTTP_400_BAD_REQUEST
@@ -236,7 +238,7 @@ def get_form_entries(request, form_id):
     """Get all form data entries for a specific form"""
     try:
         form = Form.objects.get(id=form_id)
-        form_entries = FormData.objects.filter(form=form).order_by('-created_at')
+        form_entries = FormData.objects.filter(form=form).order_by('-id')
         
         # Get latest entry version to extract column names
         latest_entry_version = FormEntryVersion.objects.filter(form=form).order_by('-form_version').first()
@@ -276,5 +278,57 @@ def get_form_entries(request, form_id):
     except Exception as e:
         return Response(
             {'error': f'Failed to get form entries: {str(e)}'}, 
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+
+@api_view(['GET'])
+#@permission_classes([IsAuthenticated])
+def get_filled_display_data(request, form_data_id):
+    """Get display data with values filled from form data"""
+    try:
+        form_data = FormData.objects.get(id=form_data_id)
+        form = form_data.form
+        
+        # Get latest display version
+        display_version = FormDisplayVersion.objects.filter(form=form).order_by('-form_version').first()
+        
+        if not display_version:
+            return Response(
+                {'error': 'Display version not found'}, 
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        display_data = display_version.form_display_json.copy()
+        form_values = form_data.form_values_json
+        
+        # Fill values in cells
+        for cell in display_data.get('cells', []):
+            cell_value = cell.get('value', '')
+            if cell_value and '<pa' in str(cell_value):
+                # Extract ID from pattern like <pa_1>
+                import re
+                match = re.search(r'<pa_(\d+)>', str(cell_value))
+                if match:
+                    field_id = match.group(1)
+                    if field_id in form_values:
+                        cell['value'] = form_values[field_id]
+                        cell['display_value'] = str(form_values[field_id])
+        
+        return Response({
+            'form_data_id': form_data_id,
+            'form_id': form.id,
+            'form_name': form.form_name,
+            'display_data': display_data
+        })
+        
+    except FormData.DoesNotExist:
+        return Response(
+            {'error': 'Form data not found'}, 
+            status=status.HTTP_404_NOT_FOUND
+        )
+    except Exception as e:
+        return Response(
+            {'error': f'Failed to get filled display data: {str(e)}'}, 
             status=status.HTTP_400_BAD_REQUEST
         )

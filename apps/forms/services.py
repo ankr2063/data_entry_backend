@@ -255,19 +255,18 @@ class SharePointService:
             wb_data = load_workbook(file_content, data_only=True)
             ws_data = wb_data[worksheet_name]
             
-            # Determine dimensions (max 12 columns)
+            # Determine dimensions - find actual used columns
             max_row = ws.max_row
-            max_col = min(ws.max_column, 12)
             
             # Find actual used columns (non-empty cells)
             used_cols = set()
             for row_idx in range(1, max_row + 1):
-                for col_idx in range(1, max_col + 1):
+                for col_idx in range(1, ws.max_column + 1):
                     cell = ws.cell(row_idx, col_idx)
                     if cell.value is not None and str(cell.value).strip():
                         used_cols.add(col_idx)
             
-            actual_max_col = max(used_cols) if used_cols else max_col
+            actual_max_col = max(used_cols) if used_cols else ws.max_column
             
             # Extract cells metadata
             cells_metadata = []
@@ -332,6 +331,12 @@ class SharePointService:
         # Separate formula and value
         formula_value = cell.value if isinstance(cell.value, str) and cell.value.startswith('=') else None
         display_value = cell_data_value.value if cell_data_value else cell.value
+        
+        # Convert datetime to string
+        if hasattr(display_value, 'isoformat'):
+            display_value = display_value.isoformat()
+        elif display_value is not None and not isinstance(display_value, (str, int, float, bool)):
+            display_value = str(display_value)
         
         return {
             "address": cell.coordinate,
