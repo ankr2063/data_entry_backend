@@ -302,6 +302,11 @@ def get_filled_display_data(request, form_data_id):
         display_data = display_version.form_display_json.copy()
         form_values = form_data.form_values_json
         
+        # Parse form_values if it's a string
+        if isinstance(form_values, str):
+            import json
+            form_values = json.loads(form_values)
+        
         # Fill values in cells
         for cell in display_data.get('cells', []):
             cell_value = cell.get('value', '')
