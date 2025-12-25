@@ -1,9 +1,11 @@
 from django.db import models
+from apps.organizations.models import Organization
 
 
 class Permission(models.Model):
     id = models.AutoField(primary_key=True)
-    permission_name = models.CharField(max_length=255, unique=True)
+    org = models.ForeignKey(Organization, on_delete=models.CASCADE, db_column='org_id')
+    permission_name = models.CharField(max_length=255)
     description = models.TextField(null=True, blank=True)
     created_by = models.CharField(max_length=255)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -12,6 +14,7 @@ class Permission(models.Model):
 
     class Meta:
         db_table = 'permissions'
+        unique_together = ('org', 'permission_name')
 
     def __str__(self):
         return self.permission_name
@@ -19,7 +22,8 @@ class Permission(models.Model):
 
 class Role(models.Model):
     id = models.AutoField(primary_key=True)
-    role_name = models.CharField(max_length=255, unique=True)
+    org = models.ForeignKey(Organization, on_delete=models.CASCADE, db_column='org_id')
+    role_name = models.CharField(max_length=255)
     description = models.TextField(null=True, blank=True)
     permissions = models.ManyToManyField(Permission, through='RolePermission')
     created_by = models.CharField(max_length=255)
@@ -29,6 +33,7 @@ class Role(models.Model):
 
     class Meta:
         db_table = 'roles'
+        unique_together = ('org', 'role_name')
 
     def __str__(self):
         return self.role_name

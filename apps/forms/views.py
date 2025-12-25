@@ -4,16 +4,18 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from django.db import transaction
 from .models import Form, FormDisplayVersion, FormEntryVersion, FormData, FormDataHistory, UserFormAccess
+from apps.permissions.models import Role
 from .serializers import SharePointMetadataSerializer, FormSerializer
 from .services import SharePointService
 import json
 
 
 @api_view(['POST'])
-#@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated])
 def create_form_from_sharepoint(request):
     """Create new form from SharePoint URL"""
     try:
+        user = request.user
         form_name = request.data.get('form_name')
         sharepoint_url = request.data.get('sharepoint_url')
         
@@ -29,8 +31,17 @@ def create_form_from_sharepoint(request):
         result = sharepoint_service.create_new_form(
             sharepoint_url,
             form_name,
-            created_by='system',  # Replace with actual user from request
-            updated_by='system'   # Replace with actual user from request
+            created_by=user.username,
+            updated_by=user.username
+        )
+        
+        # Grant admin access to creator
+        admin_role = Role.objects.get(role_name='Form Admin')
+        UserFormAccess.objects.create(
+            user=user,
+            form_id=result['form_id'],
+            role=admin_role,
+            created_by=user.username
         )
         
         return Response({
@@ -53,7 +64,7 @@ def create_form_from_sharepoint(request):
 
 
 @api_view(['POST'])
-#@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated])
 def update_form_from_sharepoint(request):
     """Update existing form from SharePoint URL"""
     try:
@@ -124,7 +135,7 @@ def get_forms_list(request):
 
 
 @api_view(['GET'])
-#@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated])
 def get_form_metadata(request, form_id, metadata_type):
     """Get form metadata based on type: 'entry', 'display', or 'both'"""
     try:
@@ -292,7 +303,7 @@ def get_form_entries(request, form_id):
 
 
 @api_view(['GET'])
-#@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated])
 def get_filled_display_data(request, form_data_id):
     """Get display data with values filled from form data"""
     try:

@@ -1,5 +1,6 @@
 from django.db import models
 from apps.users.models import User
+from apps.permissions.models import Role
 
 
 class Form(models.Model):
@@ -20,7 +21,7 @@ class UserFormAccess(models.Model):
     id = models.AutoField(primary_key=True)
     user = models.ForeignKey(User, on_delete=models.CASCADE)
     form = models.ForeignKey(Form, on_delete=models.CASCADE)
-    role = models.CharField(max_length=100)
+    role = models.ForeignKey(Role, on_delete=models.CASCADE, db_column='role_id')
     created_by = models.CharField(max_length=255)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_by = models.CharField(max_length=255, null=True, blank=True)
