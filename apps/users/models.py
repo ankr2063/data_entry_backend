@@ -22,3 +22,7 @@ class User(models.Model):
 
     def __str__(self):
         return self.username
+    
+    @property
+    def is_authenticated(self):
+        return True

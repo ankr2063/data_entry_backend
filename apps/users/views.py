@@ -17,7 +17,7 @@ def register(request):
         user_data['password'] = make_password(user_data['password'])
         user = User.objects.create(**user_data)
         
-        refresh = RefreshToken()
+        refresh = RefreshToken.for_user(user)
         refresh['user_id'] = user.id
         
         return Response({
@@ -54,7 +54,7 @@ def login(request):
             user = User.objects.get(username=username, org=org, valid=True)
             
             if check_password(password, user.password):
-                refresh = RefreshToken()
+                refresh = RefreshToken.for_user(user)
                 refresh['user_id'] = user.id
                 
                 return Response({
