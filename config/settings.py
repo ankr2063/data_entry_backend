@@ -20,6 +20,7 @@ INSTALLED_APPS = [
     'apps.organizations',
     'apps.users',
     'apps.forms',
+    'apps.permissions',
 ]
 
 MIDDLEWARE = [

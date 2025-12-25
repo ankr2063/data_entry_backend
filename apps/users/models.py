@@ -1,5 +1,6 @@
 from django.db import models
 from apps.organizations.models import Organization
+from apps.permissions.models import Role
 
 
 class User(models.Model):
@@ -10,7 +11,7 @@ class User(models.Model):
     name = models.CharField(max_length=255)
     valid = models.BooleanField(default=True)
     attest_url = models.URLField(null=True, blank=True)
-    role = models.CharField(max_length=100)
+    role = models.ForeignKey(Role, on_delete=models.SET_NULL, null=True, db_column='role_id')
     created_by = models.CharField(max_length=255)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_by = models.CharField(max_length=255, null=True, blank=True)

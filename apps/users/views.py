@@ -33,13 +33,26 @@ def register(request):
 @api_view(['POST'])
 @permission_classes([AllowAny])
 def login(request):
+    from decouple import config
+    from apps.organizations.models import Organization
+    
     serializer = UserLoginSerializer(data=request.data)
     if serializer.is_valid():
         username = serializer.validated_data['username']
         password = serializer.validated_data['password']
+        org_name = serializer.validated_data.get('org_name')
+        
+        # Get org_name from env if not provided
+        if not org_name:
+            org_name = config('DEFAULT_ORG', default='default')
         
         try:
-            user = User.objects.get(username=username, valid=True)
+            # Get organization
+            org = Organization.objects.get(org_name=org_name)
+            
+            # Get user with matching username, org, and valid status
+            user = User.objects.get(username=username, org=org, valid=True)
+            
             if check_password(password, user.password):
                 refresh = RefreshToken()
                 refresh['user_id'] = user.id
@@ -52,7 +65,7 @@ def login(request):
                 }, status=status.HTTP_200_OK)
             else:
                 return Response({'error': 'Invalid credentials'}, status=status.HTTP_401_UNAUTHORIZED)
-        except User.DoesNotExist:
+        except (User.DoesNotExist, Organization.DoesNotExist):
             return Response({'error': 'Invalid credentials'}, status=status.HTTP_401_UNAUTHORIZED)
     
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)

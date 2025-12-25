@@ -18,3 +18,4 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
 class UserLoginSerializer(serializers.Serializer):
     username = serializers.CharField()
     password = serializers.CharField()
+    org_name = serializers.CharField(required=False, allow_blank=True)

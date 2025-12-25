@@ -3,7 +3,7 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from django.db import transaction
-from .models import Form, FormDisplayVersion, FormEntryVersion, FormData, FormDataHistory
+from .models import Form, FormDisplayVersion, FormEntryVersion, FormData, FormDataHistory, UserFormAccess
 from .serializers import SharePointMetadataSerializer, FormSerializer
 from .services import SharePointService
 import json
@@ -100,15 +100,20 @@ def update_form_from_sharepoint(request):
 
 
 @api_view(['GET'])
-#@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated])
 def get_forms_list(request):
-    """Get list of all forms"""
+    """Get list of forms user has access to"""
     try:
-        forms = Form.objects.all().order_by('-created_at')
-        serializer = FormSerializer(forms, many=True)
+        user = request.user
+        
+        # Get forms where user has access
+        user_form_access = UserFormAccess.objects.filter(user=user).select_related('form')
+        accessible_forms = [access.form for access in user_form_access]
+        
+        serializer = FormSerializer(accessible_forms, many=True)
         return Response({
             'forms': serializer.data,
-            'count': forms.count()
+            'count': len(accessible_forms)
         })
         
     except Exception as e:
@@ -166,10 +171,11 @@ def get_form_metadata(request, form_id, metadata_type):
 
 
 @api_view(['POST'])
-#@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated])
 def save_form_data(request):
     """Save form data submission from frontend"""
     try:
+        user = request.user
         form_id = request.data.get('form_id')
         form_values = request.data.get('form_values')
         
@@ -195,12 +201,13 @@ def save_form_data(request):
             form=form,
             form_entry_version=entry_version,
             form_values_json=form_values,
-            created_by='system',  # Replace with actual user
+            user=user,
+            created_by='system',
             updated_by='system'
         )
         
         # Get next version number for history
-        last_history = FormDataHistory.objects.filter(form=form).order_by('-version').first()
+        last_history = FormDataHistory.objects.filter(form=form, user=user).order_by('-version').first()
         next_version = (last_history.version + 1) if last_history else 1
         
         # Save to history
@@ -209,6 +216,7 @@ def save_form_data(request):
             form_entry_version=entry_version,
             form_values_json=form_values,
             version=next_version,
+            user=user,
             created_by='system',
             updated_by='system'
         )
@@ -233,12 +241,13 @@ def save_form_data(request):
 
 
 @api_view(['GET'])
-#@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated])
 def get_form_entries(request, form_id):
-    """Get all form data entries for a specific form"""
+    """Get all form data entries for a specific form filtered by user"""
     try:
+        user = request.user
         form = Form.objects.get(id=form_id)
-        form_entries = FormData.objects.filter(form=form).order_by('-id')
+        form_entries = FormData.objects.filter(form=form, user=user).order_by('-id')
         
         # Get latest entry version to extract column names
         latest_entry_version = FormEntryVersion.objects.filter(form=form).order_by('-form_version').first()
