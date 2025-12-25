@@ -186,9 +186,14 @@ def get_form_metadata(request, form_id, metadata_type):
 def save_form_data(request):
     """Save form data submission from frontend"""
     try:
+        import base64
+        import os
+        from pathlib import Path
+        
         user = request.user
         form_id = request.data.get('form_id')
         form_values = request.data.get('form_values')
+        attachments = request.data.get('attachments', {})
         
         if not form_id or not form_values:
             return Response(
@@ -217,6 +222,27 @@ def save_form_data(request):
             updated_by='system'
         )
         
+        # Save attachments
+        attachment_urls = {}
+        for field_id, files in attachments.items():
+            attachment_urls[field_id] = []
+            for idx, file_data in enumerate(files, 1):
+                filename = file_data.get('filename')
+                content = file_data.get('content')
+                
+                if filename and content:
+                    # Create directory structure: /userUploads/formId/entryId/fieldId/
+                    upload_dir = Path('userUploads') / str(form_id) / str(form_data.id) / str(field_id)
+                    upload_dir.mkdir(parents=True, exist_ok=True)
+                    
+                    # Save file
+                    file_path = upload_dir / filename
+                    with open(file_path, 'wb') as f:
+                        f.write(base64.b64decode(content))
+                    
+                    # Store relative URL
+                    attachment_urls[field_id].append(str(file_path))
+        
         # Get next version number for history
         last_history = FormDataHistory.objects.filter(form=form, user=user).order_by('-version').first()
         next_version = (last_history.version + 1) if last_history else 1
@@ -236,7 +262,8 @@ def save_form_data(request):
             'message': 'Form data saved successfully',
             'form_data_id': form_data.id,
             'form_id': form.id,
-            'entry_version': entry_version.form_version
+            'entry_version': entry_version.form_version,
+            'attachments': attachment_urls
         }, status=status.HTTP_201_CREATED)
         
     except Form.DoesNotExist:
@@ -273,9 +300,26 @@ def get_form_entries(request, form_id):
         # Format entries data
         entries_data = []
         for entry in form_entries:
+            # Get attachments for this entry
+            import os
+            from pathlib import Path
+            
+            attachments = {}
+            upload_dir = Path('userUploads') / str(form.id) / str(entry.id)
+            
+            if upload_dir.exists():
+                for field_dir in upload_dir.iterdir():
+                    if field_dir.is_dir():
+                        field_id = field_dir.name
+                        attachments[field_id] = []
+                        for file_path in field_dir.iterdir():
+                            if file_path.is_file():
+                                attachments[field_id].append(str(file_path))
+            
             entries_data.append({
                 'id': entry.id,
                 'values': entry.form_values_json,
+                'attachments': attachments,
                 'created_by': entry.created_by,
                 'created_at': entry.created_at,
                 'updated_by': entry.updated_by,
