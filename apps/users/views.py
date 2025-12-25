@@ -1,6 +1,6 @@
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
-from rest_framework.permissions import AllowAny
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth.hashers import make_password, check_password
@@ -69,3 +69,15 @@ def login(request):
             return Response({'error': 'Invalid credentials'}, status=status.HTTP_401_UNAUTHORIZED)
     
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def logout(request):
+    device_token = request.data.get('device_token')
+    
+    if device_token:
+        from apps.notifications.models import UserDevice
+        UserDevice.objects.filter(user=request.user, device_token=device_token).delete()
+    
+    return Response({'message': 'Logout successful'}, status=status.HTTP_200_OK)

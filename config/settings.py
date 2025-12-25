@@ -21,6 +21,7 @@ INSTALLED_APPS = [
     'apps.users',
     'apps.forms',
     'apps.permissions',
+    'apps.notifications',
 ]
 
 MIDDLEWARE = [
