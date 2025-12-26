@@ -8,6 +8,7 @@ class Form(models.Model):
     form_name = models.CharField(max_length=255)
     source = models.CharField(max_length=255, null=True, blank=True)
     url = models.URLField(null=True, blank=True)
+    custom_scripts = models.JSONField(default=list, blank=True)
     created_by = models.ForeignKey(User, on_delete=models.RESTRICT, related_name='created_forms', db_column='created_by')
     created_at = models.DateTimeField(auto_now_add=True)
     updated_by = models.ForeignKey(User, on_delete=models.RESTRICT, related_name='updated_forms', null=True, blank=True, db_column='updated_by')

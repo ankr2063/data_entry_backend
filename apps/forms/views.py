@@ -32,7 +32,8 @@ def create_form_from_sharepoint(request):
             sharepoint_url,
             form_name,
             created_by=user,
-            updated_by=user
+            updated_by=user,
+            custom_scripts=request.data.get('custom_scripts', [])
         )
         
         # Grant admin access to creator
@@ -77,6 +78,14 @@ def update_form_from_sharepoint(request):
             )
         
         sharepoint_service = SharePointService()
+        
+        # Update custom_scripts if provided
+        custom_scripts = request.data.get('custom_scripts')
+        if custom_scripts is not None:
+            form = Form.objects.get(id=form_id)
+            form.custom_scripts = custom_scripts
+            form.updated_by = request.user
+            form.save()
         
         # Update existing form
         result = sharepoint_service.update_existing_form(

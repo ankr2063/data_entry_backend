@@ -32,7 +32,7 @@ class SharePointService:
                 raise Exception(f"Failed to acquire token: {result.get('error_description')}")
         return self.token
     
-    def create_new_form(self, sharepoint_url: str, form_name: str, created_by: str, updated_by: str) -> Dict:
+    def create_new_form(self, sharepoint_url: str, form_name: str, created_by: str, updated_by: str, custom_scripts: list = None) -> Dict:
         """Create new form from SharePoint URL"""
         worksheets = self.get_workbook_worksheets(sharepoint_url)
         
@@ -54,6 +54,7 @@ class SharePointService:
                 form_name=form_name,
                 source='sharepoint',
                 url=sharepoint_url,
+                custom_scripts=custom_scripts or [],
                 created_by=created_by,
                 updated_by=updated_by
             )
