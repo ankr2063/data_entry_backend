@@ -320,9 +320,9 @@ def get_form_entries(request, form_id):
                 'id': entry.id,
                 'values': entry.form_values_json,
                 'attachments': attachments,
-                'created_by': entry.created_by,
+                'created_by': entry.created_by.id if entry.created_by else None,
                 'created_at': entry.created_at,
-                'updated_by': entry.updated_by,
+                'updated_by': entry.updated_by.id if entry.updated_by else None,
                 'updated_at': entry.updated_at
             })
         

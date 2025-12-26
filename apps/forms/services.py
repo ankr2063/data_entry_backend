@@ -212,38 +212,62 @@ class SharePointService:
         import re
         from urllib.parse import urlparse, parse_qs, unquote
         
-        # Extract domain and site from URL
-        # Example: https://persivx.sharepoint.com/:x:/s/test/...
         parsed = urlparse(sharepoint_url)
-        domain = parsed.netloc  # persivx.sharepoint.com
+        domain = parsed.netloc
         path_parts = parsed.path.split('/')
         
-        # Extract site name (after /s/)
-        site_name = None
-        for i, part in enumerate(path_parts):
-            if part == 's' and i + 1 < len(path_parts):
-                site_name = path_parts[i + 1]
-                break
+        # Check if it's a Doc.aspx URL format
+        if 'Doc.aspx' in sharepoint_url or '_layouts' in sharepoint_url:
+            # Extract site name from /sites/xxx/
+            site_name = None
+            for i, part in enumerate(path_parts):
+                if part == 'sites' and i + 1 < len(path_parts):
+                    site_name = path_parts[i + 1]
+                    break
+            
+            if not site_name:
+                raise Exception("Could not extract site name from URL")
+            
+            # Extract file GUID from sourcedoc parameter
+            query_params = parse_qs(parsed.query)
+            source_doc = query_params.get('sourcedoc', [None])[0]
+            file_name = query_params.get('file', [None])[0]
+            
+            if not source_doc or not file_name:
+                raise Exception("Could not extract file info from URL")
+            
+            # Remove curly braces from GUID
+            file_guid = source_doc.strip('{}').replace('%7B', '').replace('%7D', '')
+            
+            site_url = f"https://{domain}/sites/{site_name}"
+            site_id = self._get_site_id(site_url)
+            
+            return site_id, file_name
         
-        if not site_name:
-            raise Exception("Could not extract site name from URL")
-        
-        # Construct site URL
-        site_url = f"https://{domain}/sites/{site_name}"
-        site_id = self._get_site_id(site_url)
-        
-        # Extract file ID from URL path
-        # The file ID is in the path after the site name
-        file_id_match = re.search(r'/([A-Za-z0-9_-]+)\?', sharepoint_url)
-        if not file_id_match:
-            raise Exception("Could not extract file ID from URL")
-        
-        file_id = file_id_match.group(1)
-        
-        # Get file path using file ID
-        file_path = self._get_file_path_from_id(site_id, file_id)
-        
-        return site_id, file_path
+        # Original sharing link format (:x:/s/test/...)
+        else:
+            # Extract site name (after /s/)
+            site_name = None
+            for i, part in enumerate(path_parts):
+                if part == 's' and i + 1 < len(path_parts):
+                    site_name = path_parts[i + 1]
+                    break
+            
+            if not site_name:
+                raise Exception("Could not extract site name from URL")
+            
+            site_url = f"https://{domain}/sites/{site_name}"
+            site_id = self._get_site_id(site_url)
+            
+            # Extract file ID from URL path
+            file_id_match = re.search(r'/([A-Za-z0-9_-]+)\?', sharepoint_url)
+            if not file_id_match:
+                raise Exception("Could not extract file ID from URL")
+            
+            file_id = file_id_match.group(1)
+            file_path = self._get_file_path_from_id(site_id, file_id)
+            
+            return site_id, file_path
     
     def _get_file_path_from_id(self, site_id: str, file_id: str) -> str:
         """Get file path from sharing link ID"""
