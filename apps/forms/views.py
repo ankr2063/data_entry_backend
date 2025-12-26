@@ -31,8 +31,8 @@ def create_form_from_sharepoint(request):
         result = sharepoint_service.create_new_form(
             sharepoint_url,
             form_name,
-            created_by=user.username,
-            updated_by=user.username
+            created_by=user.id,
+            updated_by=user.id
         )
         
         # Grant admin access to creator
@@ -41,7 +41,7 @@ def create_form_from_sharepoint(request):
             user=user,
             form_id=result['form_id'],
             role=admin_role,
-            created_by=user.username
+            created_by=user
         )
         
         return Response({
@@ -81,7 +81,7 @@ def update_form_from_sharepoint(request):
         # Update existing form
         result = sharepoint_service.update_existing_form(
             form_id,
-            updated_by='system'  # Replace with actual user from request
+            updated_by=request.user.id
         )
         
         return Response({
@@ -218,8 +218,8 @@ def save_form_data(request):
             form_entry_version=entry_version,
             form_values_json=form_values,
             user=user,
-            created_by='system',
-            updated_by='system'
+            created_by=user,
+            updated_by=user
         )
         
         # Save attachments
@@ -254,8 +254,8 @@ def save_form_data(request):
             form_values_json=form_values,
             version=next_version,
             user=user,
-            created_by='system',
-            updated_by='system'
+            created_by=user,
+            updated_by=user
         )
         
         return Response({

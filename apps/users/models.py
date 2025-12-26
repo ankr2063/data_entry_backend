@@ -12,9 +12,9 @@ class User(models.Model):
     valid = models.BooleanField(default=True)
     attest_url = models.URLField(null=True, blank=True)
     role = models.ForeignKey(Role, on_delete=models.SET_NULL, null=True, db_column='role_id')
-    created_by = models.CharField(max_length=255)
+    created_by = models.ForeignKey('self', on_delete=models.RESTRICT, related_name='created_users', db_column='created_by')
     created_at = models.DateTimeField(auto_now_add=True)
-    updated_by = models.CharField(max_length=255, null=True, blank=True)
+    updated_by = models.ForeignKey('self', on_delete=models.RESTRICT, related_name='updated_users', null=True, blank=True, db_column='updated_by')
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:

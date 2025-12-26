@@ -7,9 +7,9 @@ class Permission(models.Model):
     org = models.ForeignKey(Organization, on_delete=models.CASCADE, db_column='org_id')
     permission_name = models.CharField(max_length=255)
     description = models.TextField(null=True, blank=True)
-    created_by = models.CharField(max_length=255)
+    created_by = models.ForeignKey('users.User', on_delete=models.RESTRICT, related_name='created_permissions', db_column='created_by')
     created_at = models.DateTimeField(auto_now_add=True)
-    updated_by = models.CharField(max_length=255, null=True, blank=True)
+    updated_by = models.ForeignKey('users.User', on_delete=models.RESTRICT, related_name='updated_permissions', null=True, blank=True, db_column='updated_by')
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
@@ -26,9 +26,9 @@ class Role(models.Model):
     role_name = models.CharField(max_length=255)
     description = models.TextField(null=True, blank=True)
     permissions = models.ManyToManyField(Permission, through='RolePermission')
-    created_by = models.CharField(max_length=255)
+    created_by = models.ForeignKey('users.User', on_delete=models.RESTRICT, related_name='created_roles', db_column='created_by')
     created_at = models.DateTimeField(auto_now_add=True)
-    updated_by = models.CharField(max_length=255, null=True, blank=True)
+    updated_by = models.ForeignKey('users.User', on_delete=models.RESTRICT, related_name='updated_roles', null=True, blank=True, db_column='updated_by')
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
@@ -43,9 +43,9 @@ class RolePermission(models.Model):
     id = models.AutoField(primary_key=True)
     role = models.ForeignKey(Role, on_delete=models.CASCADE, db_column='role_id')
     permission = models.ForeignKey(Permission, on_delete=models.CASCADE, db_column='permission_id')
-    created_by = models.CharField(max_length=255)
+    created_by = models.ForeignKey('users.User', on_delete=models.RESTRICT, related_name='created_role_permissions', db_column='created_by')
     created_at = models.DateTimeField(auto_now_add=True)
-    updated_by = models.CharField(max_length=255, null=True, blank=True)
+    updated_by = models.ForeignKey('users.User', on_delete=models.RESTRICT, related_name='updated_role_permissions', null=True, blank=True, db_column='updated_by')
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:

@@ -9,7 +9,7 @@ class OrganizationViewSet(viewsets.ModelViewSet):
     serializer_class = OrganizationSerializer
 
     def perform_create(self, serializer):
-        serializer.save(created_by='system')  # Replace with actual user
+        serializer.save(created_by=self.request.user)
 
     def perform_update(self, serializer):
-        serializer.save(updated_by='system')  # Replace with actual user
+        serializer.save(updated_by=self.request.user)

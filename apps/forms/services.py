@@ -208,8 +208,67 @@ class SharePointService:
             raise Exception(f"Failed to get worksheets: {response.text}")
     
     def _parse_sharepoint_url(self, sharepoint_url: str) -> tuple:
-        site_id = self._get_site_id("https://persivx.sharepoint.com/sites/test")
-        return site_id, "Test.xlsx"
+        """Parse SharePoint sharing URL to extract site URL and file path"""
+        import re
+        from urllib.parse import urlparse, parse_qs, unquote
+        
+        # Extract domain and site from URL
+        # Example: https://persivx.sharepoint.com/:x:/s/test/...
+        parsed = urlparse(sharepoint_url)
+        domain = parsed.netloc  # persivx.sharepoint.com
+        path_parts = parsed.path.split('/')
+        
+        # Extract site name (after /s/)
+        site_name = None
+        for i, part in enumerate(path_parts):
+            if part == 's' and i + 1 < len(path_parts):
+                site_name = path_parts[i + 1]
+                break
+        
+        if not site_name:
+            raise Exception("Could not extract site name from URL")
+        
+        # Construct site URL
+        site_url = f"https://{domain}/sites/{site_name}"
+        site_id = self._get_site_id(site_url)
+        
+        # Extract file ID from URL path
+        # The file ID is in the path after the site name
+        file_id_match = re.search(r'/([A-Za-z0-9_-]+)\?', sharepoint_url)
+        if not file_id_match:
+            raise Exception("Could not extract file ID from URL")
+        
+        file_id = file_id_match.group(1)
+        
+        # Get file path using file ID
+        file_path = self._get_file_path_from_id(site_id, file_id)
+        
+        return site_id, file_path
+    
+    def _get_file_path_from_id(self, site_id: str, file_id: str) -> str:
+        """Get file path from sharing link ID"""
+        token = self.get_access_token()
+        headers = {"Authorization": f"Bearer {token}"}
+        
+        # Try to resolve the sharing link
+        sharing_url = f"https://graph.microsoft.com/v1.0/shares/u!{file_id}/driveItem"
+        response = requests.get(sharing_url, headers=headers)
+        
+        if response.status_code == 200:
+            item = response.json()
+            return item.get('name', 'Unknown.xlsx')
+        else:
+            # Fallback: search for files in the site
+            search_url = f"https://graph.microsoft.com/v1.0/sites/{site_id}/drive/root/children"
+            response = requests.get(search_url, headers=headers)
+            if response.status_code == 200:
+                items = response.json().get('value', [])
+                # Return first Excel file found
+                for item in items:
+                    if item.get('name', '').endswith(('.xlsx', '.xls')):
+                        return item['name']
+            
+            raise Exception("Could not resolve file path from sharing URL")
     
     def _get_site_id(self, site_url: str) -> str:
         token = self.get_access_token()
