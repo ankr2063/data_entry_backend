@@ -4,6 +4,7 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth.hashers import make_password, check_password
+from django.db.models import Q
 from .models import User
 from .serializers import UserRegistrationSerializer, UserLoginSerializer
 
@@ -15,7 +16,12 @@ def register(request):
     if serializer.is_valid():
         user_data = serializer.validated_data
         user_data['password'] = make_password(user_data['password'])
-        user = User.objects.create(**user_data)
+        
+        # Set created_by to the user being created (self-reference)
+        user = User(**user_data)
+        user.save()
+        user.created_by = user
+        user.save()
         
         refresh = RefreshToken.for_user(user)
         refresh['user_id'] = user.id
@@ -81,3 +87,19 @@ def logout(request):
         UserDevice.objects.filter(user=request.user, device_token=device_token).delete()
     
     return Response({'message': 'Logout successful'}, status=status.HTTP_200_OK)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def search_users(request):
+    search = request.GET.get('search', '').strip()
+    
+    if not search:
+        return Response({'error': 'search parameter is required'}, status=status.HTTP_400_BAD_REQUEST)
+    
+    users = User.objects.filter(
+        Q(username__icontains=search) | Q(name__icontains=search),
+        valid=True
+    ).values('id', 'username', 'name', 'org__org_name', 'role__role_name')[:20]
+    
+    return Response({'users': list(users), 'count': len(users)})
