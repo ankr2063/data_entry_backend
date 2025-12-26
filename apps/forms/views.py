@@ -31,8 +31,8 @@ def create_form_from_sharepoint(request):
         result = sharepoint_service.create_new_form(
             sharepoint_url,
             form_name,
-            created_by=user.id,
-            updated_by=user.id
+            created_by=user,
+            updated_by=user
         )
         
         # Grant admin access to creator
@@ -81,7 +81,7 @@ def update_form_from_sharepoint(request):
         # Update existing form
         result = sharepoint_service.update_existing_form(
             form_id,
-            updated_by=request.user.id
+            updated_by=request.user
         )
         
         return Response({

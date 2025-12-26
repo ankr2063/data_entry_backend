@@ -18,7 +18,7 @@ def permission_list_create(request):
     elif request.method == 'POST':
         serializer = PermissionSerializer(data=request.data)
         if serializer.is_valid():
-            serializer.save()
+            serializer.save(created_by=request.user)
             return Response(serializer.data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
@@ -38,7 +38,7 @@ def permission_detail(request, pk):
     elif request.method == 'PUT':
         serializer = PermissionSerializer(permission, data=request.data, partial=True)
         if serializer.is_valid():
-            serializer.save()
+            serializer.save(updated_by=request.user)
             return Response(serializer.data)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     
@@ -59,7 +59,7 @@ def role_list_create(request):
     elif request.method == 'POST':
         serializer = RoleSerializer(data=request.data)
         if serializer.is_valid():
-            serializer.save()
+            serializer.save(created_by=request.user)
             return Response(serializer.data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
@@ -79,7 +79,7 @@ def role_detail(request, pk):
     elif request.method == 'PUT':
         serializer = RoleSerializer(role, data=request.data, partial=True)
         if serializer.is_valid():
-            serializer.save()
+            serializer.save(updated_by=request.user)
             return Response(serializer.data)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     
