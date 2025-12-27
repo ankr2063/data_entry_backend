@@ -118,7 +118,6 @@ def update_form_from_sharepoint(request):
             status=status.HTTP_404_NOT_FOUND
         )
     except Exception as e:
-        print(e)
         return Response(
             {'error': f'Failed to update form: {str(e)}'}, 
             status=status.HTTP_400_BAD_REQUEST
@@ -189,7 +188,6 @@ def get_form_metadata(request, form_id, metadata_type):
             status=status.HTTP_404_NOT_FOUND
         )
     except Exception as e:
-        print(e)
         return Response(
             {'error': f'Failed to get form data: {str(e)}'}, 
             status=status.HTTP_400_BAD_REQUEST
@@ -208,13 +206,12 @@ def save_form_data(request):
         user = request.user
         form_id = request.data.get('form_id')
         form_values = request.data.get('form_values')
-        observation_number = request.data.get('observation_number')
         form_data_entry_id = request.data.get('form_data_entry_id')
         attachments = request.data.get('attachments', {})
         
-        if not form_id or not form_values or observation_number is None:
+        if not form_id or not form_values:
             return Response(
-                {'error': 'form_id, form_values, and observation_number are required'}, 
+                {'error': 'form_id and form_values are required'}, 
                 status=status.HTTP_400_BAD_REQUEST
             )
         
@@ -229,23 +226,20 @@ def save_form_data(request):
                 status=status.HTTP_404_NOT_FOUND
             )
         
-        # Validate observation_number against form's observation_count
-        if observation_number < 1 or observation_number > form.observation_count:
-            return Response(
-                {'error': f'observation_number must be between 1 and {form.observation_count}'}, 
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        
         # Handle form_data_entry
         if form_data_entry_id:
             # Existing entry - validate it exists and belongs to user
             try:
                 form_data_entry = FormDataEntry.objects.get(id=form_data_entry_id, user=user, form=form)
                 
-                # Check if observation_number already exists for this entry
-                if FormData.objects.filter(form_data_entry=form_data_entry, observation_number=observation_number).exists():
+                # Get last observation number for this entry
+                last_observation = FormData.objects.filter(form_data_entry=form_data_entry).order_by('-observation_number').first()
+                observation_number = (last_observation.observation_number + 1) if last_observation else 1
+                
+                # Check if observation_number exceeds form's observation_count
+                if observation_number > form.observation_count:
                     return Response(
-                        {'error': f'Observation {observation_number} already exists for this entry'}, 
+                        {'error': f'Maximum observations ({form.observation_count}) reached for this entry'}, 
                         status=status.HTTP_400_BAD_REQUEST
                     )
                 
@@ -257,13 +251,14 @@ def save_form_data(request):
                     status=status.HTTP_404_NOT_FOUND
                 )
         else:
-            # New entry - create FormDataEntry
+            # New entry - create FormDataEntry and set observation_number to 1
             form_data_entry = FormDataEntry.objects.create(
                 user=user,
                 form=form,
                 form_entry_version=entry_version,
                 created_by=user
             )
+            observation_number = 1
         
         # Create form data entry
         form_data = FormData.objects.create(
@@ -401,7 +396,6 @@ def get_form_entries(request, form_id):
             status=status.HTTP_404_NOT_FOUND
         )
     except Exception as e:
-        print(e)
         return Response(
             {'error': f'Failed to get form entries: {str(e)}'}, 
             status=status.HTTP_400_BAD_REQUEST
