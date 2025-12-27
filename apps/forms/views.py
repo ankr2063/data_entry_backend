@@ -3,7 +3,7 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from django.db import transaction
-from .models import Form, FormDisplayVersion, FormEntryVersion, FormData, FormDataHistory, UserFormAccess
+from .models import Form, FormDisplayVersion, FormEntryVersion, FormData, FormDataHistory, UserFormAccess, FormDataEntry
 from apps.permissions.models import Role
 from .serializers import SharePointMetadataSerializer, FormSerializer
 from .services import SharePointService
@@ -33,7 +33,8 @@ def create_form_from_sharepoint(request):
             form_name,
             created_by=user,
             updated_by=user,
-            custom_scripts=request.data.get('custom_scripts', [])
+            custom_scripts=request.data.get('custom_scripts', []),
+            observation_count=request.data.get('observation_count', 1)
         )
         
         # Grant admin access to creator
@@ -79,11 +80,16 @@ def update_form_from_sharepoint(request):
         
         sharepoint_service = SharePointService()
         
-        # Update custom_scripts if provided
+        # Update custom_scripts or observation_count if provided
         custom_scripts = request.data.get('custom_scripts')
-        if custom_scripts is not None:
+        observation_count = request.data.get('observation_count')
+        
+        if custom_scripts is not None or observation_count is not None:
             form = Form.objects.get(id=form_id)
-            form.custom_scripts = custom_scripts
+            if custom_scripts is not None:
+                form.custom_scripts = custom_scripts
+            if observation_count is not None:
+                form.observation_count = observation_count
             form.updated_by = request.user
             form.save()
         
@@ -202,11 +208,13 @@ def save_form_data(request):
         user = request.user
         form_id = request.data.get('form_id')
         form_values = request.data.get('form_values')
+        observation_number = request.data.get('observation_number')
+        form_data_entry_id = request.data.get('form_data_entry_id')
         attachments = request.data.get('attachments', {})
         
-        if not form_id or not form_values:
+        if not form_id or not form_values or observation_number is None:
             return Response(
-                {'error': 'form_id and form_values are required'}, 
+                {'error': 'form_id, form_values, and observation_number are required'}, 
                 status=status.HTTP_400_BAD_REQUEST
             )
         
@@ -221,12 +229,50 @@ def save_form_data(request):
                 status=status.HTTP_404_NOT_FOUND
             )
         
+        # Validate observation_number against form's observation_count
+        if observation_number < 1 or observation_number > form.observation_count:
+            return Response(
+                {'error': f'observation_number must be between 1 and {form.observation_count}'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Handle form_data_entry
+        if form_data_entry_id:
+            # Existing entry - validate it exists and belongs to user
+            try:
+                form_data_entry = FormDataEntry.objects.get(id=form_data_entry_id, user=user, form=form)
+                
+                # Check if observation_number already exists for this entry
+                if FormData.objects.filter(form_data_entry=form_data_entry, observation_number=observation_number).exists():
+                    return Response(
+                        {'error': f'Observation {observation_number} already exists for this entry'}, 
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+                
+                form_data_entry.updated_by = user
+                form_data_entry.save()
+            except FormDataEntry.DoesNotExist:
+                return Response(
+                    {'error': 'Form data entry not found'}, 
+                    status=status.HTTP_404_NOT_FOUND
+                )
+        else:
+            # New entry - create FormDataEntry
+            form_data_entry = FormDataEntry.objects.create(
+                user=user,
+                form=form,
+                form_entry_version=entry_version,
+                created_by=user
+            )
+        
         # Create form data entry
         form_data = FormData.objects.create(
+            form_data_entry=form_data_entry,
+            user=user,
             form=form,
             form_entry_version=entry_version,
             form_values_json=form_values,
-            user=user,
+            observation_number=observation_number,
             created_by=user,
             updated_by=user
         )
@@ -253,16 +299,18 @@ def save_form_data(request):
                     attachment_urls[field_id].append(str(file_path))
         
         # Get next version number for history
-        last_history = FormDataHistory.objects.filter(form=form, user=user).order_by('-version').first()
+        last_history = FormDataHistory.objects.filter(form_data_entry=form_data_entry).order_by('-version').first()
         next_version = (last_history.version + 1) if last_history else 1
         
         # Save to history
         FormDataHistory.objects.create(
+            form_data_entry=form_data_entry,
+            user=user,
             form=form,
             form_entry_version=entry_version,
             form_values_json=form_values,
             version=next_version,
-            user=user,
+            observation_number=observation_number,
             created_by=user,
             updated_by=user
         )
@@ -270,7 +318,9 @@ def save_form_data(request):
         return Response({
             'message': 'Form data saved successfully',
             'form_data_id': form_data.id,
+            'form_data_entry_id': form_data_entry.id,
             'form_id': form.id,
+            'observation_number': observation_number,
             'entry_version': entry_version.form_version,
             'attachments': attachment_urls
         }, status=status.HTTP_201_CREATED)
@@ -327,6 +377,8 @@ def get_form_entries(request, form_id):
             
             entries_data.append({
                 'id': entry.id,
+                'form_data_entry_id': entry.form_data_entry.id,
+                'observation_number': entry.observation_number,
                 'values': entry.form_values_json,
                 'attachments': attachments,
                 'created_by': entry.created_by.id if entry.created_by else None,
@@ -349,6 +401,7 @@ def get_form_entries(request, form_id):
             status=status.HTTP_404_NOT_FOUND
         )
     except Exception as e:
+        print(e)
         return Response(
             {'error': f'Failed to get form entries: {str(e)}'}, 
             status=status.HTTP_400_BAD_REQUEST

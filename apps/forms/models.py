@@ -9,6 +9,7 @@ class Form(models.Model):
     source = models.CharField(max_length=255, null=True, blank=True)
     url = models.URLField(null=True, blank=True)
     custom_scripts = models.JSONField(default=list, blank=True)
+    observation_count = models.IntegerField(default=0)
     created_by = models.ForeignKey(User, on_delete=models.RESTRICT, related_name='created_forms', db_column='created_by')
     created_at = models.DateTimeField(auto_now_add=True)
     updated_by = models.ForeignKey(User, on_delete=models.RESTRICT, related_name='updated_forms', null=True, blank=True, db_column='updated_by')
@@ -16,6 +17,20 @@ class Form(models.Model):
 
     class Meta:
         db_table = 'forms'
+
+
+class FormDataEntry(models.Model):
+    id = models.AutoField(primary_key=True)
+    user = models.ForeignKey(User, on_delete=models.CASCADE, db_column='user_id')
+    form = models.ForeignKey(Form, on_delete=models.CASCADE, db_column='form_id')
+    form_entry_version = models.ForeignKey('FormEntryVersion', on_delete=models.CASCADE, db_column='form_entry_vid')
+    created_by = models.ForeignKey(User, on_delete=models.RESTRICT, related_name='created_form_data_entries', db_column='created_by')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_by = models.ForeignKey(User, on_delete=models.RESTRICT, related_name='updated_form_data_entries', null=True, blank=True, db_column='updated_by')
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'form_data_entries'
 
 
 class UserFormAccess(models.Model):
@@ -64,30 +79,35 @@ class FormDisplayVersion(models.Model):
 
 class FormData(models.Model):
     id = models.AutoField(primary_key=True)
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-    created_by = models.ForeignKey(User, on_delete=models.RESTRICT, related_name='created_form_datas', db_column='created_by')
-    updated_by = models.ForeignKey(User, on_delete=models.RESTRICT, related_name='updated_form_datas', null=True, blank=True, db_column='updated_by')
+    form_data_entry = models.ForeignKey(FormDataEntry, on_delete=models.CASCADE, db_column='form_data_entry_id')
     user = models.ForeignKey(User, on_delete=models.CASCADE, db_column='user_id')
     form = models.ForeignKey(Form, on_delete=models.CASCADE, db_column='form_id')
     form_entry_version = models.ForeignKey(FormEntryVersion, on_delete=models.CASCADE, db_column='form_entry_vid')
     form_values_json = models.JSONField()
+    observation_number = models.IntegerField()
+    created_by = models.ForeignKey(User, on_delete=models.RESTRICT, related_name='created_form_datas', db_column='created_by')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_by = models.ForeignKey(User, on_delete=models.RESTRICT, related_name='updated_form_datas', null=True, blank=True, db_column='updated_by')
+    updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         db_table = 'form_datas'
+        unique_together = ('form_data_entry', 'observation_number')
 
 
 class FormDataHistory(models.Model):
     id = models.AutoField(primary_key=True)
+    form_data_entry = models.ForeignKey(FormDataEntry, on_delete=models.CASCADE, db_column='form_data_entry_id')
+    user = models.ForeignKey(User, on_delete=models.CASCADE, db_column='user_id')
     form = models.ForeignKey(Form, on_delete=models.CASCADE, db_column='form_id')
     form_entry_version = models.ForeignKey(FormEntryVersion, on_delete=models.CASCADE, db_column='form_entry_vid')
     form_values_json = models.JSONField()
     version = models.IntegerField()
-    user = models.ForeignKey(User, on_delete=models.CASCADE, db_column='user_id')
-    updated_by = models.ForeignKey(User, on_delete=models.RESTRICT, related_name='updated_form_data_histories', db_column='updated_by')
-    updated_at = models.DateTimeField(auto_now=True)
+    observation_number = models.IntegerField()
     created_by = models.ForeignKey(User, on_delete=models.RESTRICT, related_name='created_form_data_histories', db_column='created_by')
     created_at = models.DateTimeField(auto_now_add=True)
+    updated_by = models.ForeignKey(User, on_delete=models.RESTRICT, related_name='updated_form_data_histories', db_column='updated_by')
+    updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         db_table = 'form_data_history'
